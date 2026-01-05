@@ -1,34 +1,31 @@
 
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 import { ClassData } from '../types';
 
-// 싱글톤 클라이언트 관리
 let supabaseInstance: SupabaseClient | null = null;
+let subscription: RealtimeChannel | null = null;
+
+const defaultUrl = process.env.SUPABASE_URL;
+const defaultKey = process.env.SUPABASE_KEY;
+
+if (defaultUrl && defaultKey) {
+  supabaseInstance = createClient(defaultUrl, defaultKey);
+}
 
 export const syncService = {
-  // 사용자가 입력한 설정으로 클라이언트 초기화
   init: (url: string, key: string) => {
     if (url && key) {
       supabaseInstance = createClient(url, key);
       return true;
     }
-    supabaseInstance = null;
     return false;
   },
 
-  // 현재 클라이언트 상태 확인
   isConnected: () => !!supabaseInstance,
+  hasDefaultConfig: () => !!defaultUrl && !!defaultKey,
 
-  // 클라우드에 데이터 저장
   saveToCloud: async (cloudId: string, data: ClassData): Promise<boolean> => {
-    if (!supabaseInstance) {
-      localStorage.setItem(`cloud_storage_${cloudId}`, JSON.stringify({
-        ...data,
-        lastSync: new Date().toISOString()
-      }));
-      return true;
-    }
-
+    if (!supabaseInstance) return false;
     try {
       const { error } = await supabaseInstance
         .from('class_rooms')
@@ -46,13 +43,8 @@ export const syncService = {
     }
   },
 
-  // 클라우드에서 데이터 불러오기
   loadFromCloud: async (cloudId: string): Promise<ClassData | null> => {
-    if (!supabaseInstance) {
-      const saved = localStorage.getItem(`cloud_storage_${cloudId}`);
-      return saved ? JSON.parse(saved) : null;
-    }
-
+    if (!supabaseInstance) return null;
     try {
       const { data, error } = await supabaseInstance
         .from('class_rooms')
@@ -66,6 +58,42 @@ export const syncService = {
       console.error("Supabase Load Error:", error);
       return null;
     }
+  },
+
+  // 실시간 구독 설정: 다른 기기에서 변경하면 콜백 함수 실행
+  subscribeToChanges: (cloudId: string, onUpdate: (newData: ClassData) => void) => {
+    if (!supabaseInstance || !cloudId) return null;
+    
+    // 기존 구독이 있다면 해제
+    if (subscription) {
+      subscription.unsubscribe();
+    }
+
+    subscription = supabaseInstance
+      .channel(`class-${cloudId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'class_rooms',
+          filter: `code=eq.${cloudId}`,
+        },
+        (payload) => {
+          if (payload.new && payload.new.data) {
+            onUpdate(payload.new.data as ClassData);
+          }
+        }
+      )
+      .subscribe();
+
+    return subscription;
+  },
+
+  getShareLink: (code: string) => {
+    const url = new URL(window.location.origin + window.location.pathname);
+    url.searchParams.set('c', code);
+    return url.toString();
   },
 
   generateClassCode: () => {
