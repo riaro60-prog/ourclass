@@ -1,16 +1,8 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-// 브라우저 환경에서 process가 없을 경우를 대비한 안전한 API KEY 획득
-const getApiKey = () => {
-  try {
-    return process.env.API_KEY || "";
-  } catch (e) {
-    return "";
-  }
-};
-
-const ai = new GoogleGenAI({ apiKey: getApiKey() });
+// 가이드라인에 따른 엄격한 초기화
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const getAIClassSuggestions = async (context: string) => {
   try {

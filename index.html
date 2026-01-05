@@ -7,6 +7,10 @@
   <title>꿈꾸는 우리 교실</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Gaegu:wght@300;400;700&family=Nanum+Gothic:wght@400;700&display=swap" rel="stylesheet">
+  <script>
+    // 브라우저 환경에서 process.env 참조 에러 방지를 위한 shim
+    window.process = window.process || { env: { API_KEY: "" } };
+  </script>
   <style>
     body {
       font-family: 'Nanum Gothic', sans-serif;
@@ -16,7 +20,6 @@
     .font-gaegu {
       font-family: 'Gaegu', cursive;
     }
-    /* Custom scrollbar for cute look */
     ::-webkit-scrollbar {
       width: 8px;
     }
@@ -31,15 +34,8 @@
       background: #ffc078;
     }
 
-    /* Animations */
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-    @keyframes slideUp {
-      from { transform: translateY(20px); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
-    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
     @keyframes bounceIn {
       0% { transform: scale(0.3); opacity: 0; }
       50% { transform: scale(1.05); opacity: 1; }
