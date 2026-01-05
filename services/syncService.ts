@@ -60,11 +60,10 @@ export const syncService = {
     }
   },
 
-  // 실시간 구독 설정: 다른 기기에서 변경하면 콜백 함수 실행
-  subscribeToChanges: (cloudId: string, onUpdate: (newData: ClassData) => void) => {
+  // 실시간 구독 설정: 모든 이벤트(*)를 감지하도록 수정
+  subscribeToChanges: (cloudId: string, onUpdate: (newData: ClassData) => void, onStatusChange?: (status: string) => void) => {
     if (!supabaseInstance || !cloudId) return null;
     
-    // 기존 구독이 있다면 해제
     if (subscription) {
       subscription.unsubscribe();
     }
@@ -74,18 +73,21 @@ export const syncService = {
       .on(
         'postgres_changes',
         {
-          event: 'UPDATE',
+          event: '*', // UPDATE에서 *로 변경하여 INSERT도 감지
           schema: 'public',
           table: 'class_rooms',
           filter: `code=eq.${cloudId}`,
         },
         (payload) => {
-          if (payload.new && payload.new.data) {
-            onUpdate(payload.new.data as ClassData);
+          // payload.new가 존재할 때만 업데이트
+          if (payload.new && (payload.new as any).data) {
+            onUpdate((payload.new as any).data as ClassData);
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (onStatusChange) onStatusChange(status);
+      });
 
     return subscription;
   },

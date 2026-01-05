@@ -36,20 +36,42 @@ const App: React.FC = () => {
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [isRealtimeActive, setIsRealtimeActive] = useState(false);
   
+  // 중요: 최신 상태를 참조하기 위한 Ref들
+  const lastSyncTimeRef = useRef(lastSyncTime);
   const isInternalUpdate = useRef(false);
 
-  // 데이터 수동/자동 로드 함수
+  // lastSyncTime이 바뀔 때마다 Ref 업데이트
+  useEffect(() => {
+    lastSyncTimeRef.current = lastSyncTime;
+  }, [lastSyncTime]);
+
+  const applyData = (data: ClassData) => {
+    if (!data) return;
+    setStudents(data.students || []);
+    setEvents(data.events || []);
+    setNotes(data.notes || []);
+    if (data.lastSync) {
+      setLastSyncTime(data.lastSync);
+      lastSyncTimeRef.current = data.lastSync;
+    }
+  };
+
   const fetchLatestData = async (code: string) => {
     setIsCloudSyncing(true);
-    const data = await syncService.loadFromCloud(code);
-    if (data) {
-      if (!lastSyncTime || data.lastSync > lastSyncTime) {
+    try {
+      const data = await syncService.loadFromCloud(code);
+      if (data && (!lastSyncTimeRef.current || data.lastSync > lastSyncTimeRef.current)) {
+        isInternalUpdate.current = true;
         applyData(data);
+        setTimeout(() => { isInternalUpdate.current = false; }, 500);
       }
+    } catch (e) {
+      console.error(e);
     }
     setIsCloudSyncing(false);
   };
 
+  // 앱 초기화 및 구독 설정
   useEffect(() => {
     const initApp = async () => {
       const params = new URLSearchParams(window.location.search);
@@ -57,36 +79,37 @@ const App: React.FC = () => {
       const activeCode = codeFromUrl || cloudId;
 
       if (activeCode) {
-        if (codeFromUrl) {
+        if (codeFromUrl && codeFromUrl !== cloudId) {
           setCloudId(codeFromUrl);
           window.history.replaceState({}, '', window.location.pathname);
         }
         
         await fetchLatestData(activeCode);
 
-        // 실시간 구독 시작
-        const sub = syncService.subscribeToChanges(activeCode, (newData) => {
-          if (newData.lastSync > lastSyncTime) {
-            isInternalUpdate.current = true;
-            applyData(newData);
-            setTimeout(() => { isInternalUpdate.current = false; }, 500);
+        // 실시간 구독 (Ref를 사용하여 클로저 문제 방지)
+        syncService.subscribeToChanges(
+          activeCode, 
+          (newData) => {
+            // Ref를 사용하여 항상 '현재'의 lastSyncTime과 비교
+            if (newData && newData.lastSync > lastSyncTimeRef.current) {
+              console.log("새로운 클라우드 데이터 감지됨, 업데이트 합니다.");
+              isInternalUpdate.current = true;
+              applyData(newData);
+              // 업데이트 완료 후 플래그 해제
+              setTimeout(() => { isInternalUpdate.current = false; }, 800);
+            }
+          },
+          (status) => {
+            setIsRealtimeActive(status === 'SUBSCRIBED');
           }
-        });
-        
-        if (sub) setIsRealtimeActive(true);
+        );
       }
     };
 
     initApp();
-  }, []);
+  }, [cloudId]); // cloudId가 바뀔 때마다 재구독
 
-  const applyData = (data: ClassData) => {
-    setStudents(data.students || []);
-    setEvents(data.events || []);
-    setNotes(data.notes || []);
-    if (data.lastSync) setLastSyncTime(data.lastSync);
-  };
-
+  // 로컬 스토리지 동기화
   useEffect(() => {
     localStorage.setItem('dreamy-students', JSON.stringify(students));
     localStorage.setItem('dreamy-events', JSON.stringify(events));
@@ -95,6 +118,7 @@ const App: React.FC = () => {
     localStorage.setItem('dreamy-last-sync', lastSyncTime);
   }, [students, events, notes, cloudId, lastSyncTime]);
 
+  // 데이터 변경 시 클라우드 자동 저장
   useEffect(() => {
     if (cloudId && syncService.isConnected() && !isInternalUpdate.current) {
       const timeoutId = setTimeout(async () => {
@@ -102,9 +126,12 @@ const App: React.FC = () => {
         const now = new Date().toISOString();
         const data: ClassData = { students, events, notes, lastSync: now, cloudId };
         const success = await syncService.saveToCloud(cloudId, data);
-        if (success) setLastSyncTime(now);
+        if (success) {
+          setLastSyncTime(now);
+          lastSyncTimeRef.current = now;
+        }
         setIsCloudSyncing(false);
-      }, 1500);
+      }, 1000); // 1초 대기 후 저장 (연속 입력 대응)
       return () => clearTimeout(timeoutId);
     }
   }, [students, events, notes, cloudId]);
@@ -113,50 +140,36 @@ const App: React.FC = () => {
     getEncouragementMessage().then(setEncouragement);
   }, []);
 
-  // Add missing student management handlers
   const handleAddStudent = (name: string, number: number) => {
-    const newStudent: Student = {
-      id: crypto.randomUUID(),
-      name,
-      number,
-      stickers: 0,
-    };
-    setStudents((prev) => [...prev, newStudent]);
+    const newStudent: Student = { id: crypto.randomUUID(), name, number, stickers: 0 };
+    setStudents(prev => [...prev, newStudent]);
   };
 
   const handleUpdateStickers = (id: string, amount: number) => {
-    setStudents((prev) =>
-      prev.map((s) =>
-        s.id === id ? { ...s, stickers: Math.max(0, s.stickers + amount) } : s
-      )
-    );
+    setStudents(prev => prev.map(s => s.id === id ? { ...s, stickers: Math.max(0, s.stickers + amount) } : s));
   };
 
   const handleDeleteStudent = (id: string) => {
-    setStudents((prev) => prev.filter((s) => s.id !== id));
+    if (window.confirm('정말 삭제할까요?')) {
+      setStudents(prev => prev.filter(s => s.id !== id));
+    }
   };
 
-  // Add missing AI assistant handler
   const handleAskAi = async () => {
     if (!aiTopic) return;
     setIsAiLoading(true);
-    setAiResponse('');
-    const result = await getAIClassSuggestions(aiTopic);
-    setAiResponse(result || '');
+    const response = await getAIClassSuggestions(aiTopic);
+    setAiResponse(response);
     setIsAiLoading(false);
   };
 
   const handleImportData = (newData: ClassData) => {
+    isInternalUpdate.current = true;
     applyData(newData);
     if (newData.cloudId) {
       setCloudId(newData.cloudId);
-      const sub = syncService.subscribeToChanges(newData.cloudId, (remoteData) => {
-        if (remoteData.lastSync > lastSyncTime) {
-          applyData(remoteData);
-        }
-      });
-      setIsRealtimeActive(!!sub);
     }
+    setTimeout(() => { isInternalUpdate.current = false; }, 500);
   };
 
   return (
@@ -172,7 +185,7 @@ const App: React.FC = () => {
         
         <nav className="flex flex-col gap-2">
           <NavItem active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} icon="🏠" label="홈 대시보드" color="bg-blue-50 text-blue-600" />
-          <NavItem active={currentView === 'calendar'} onClick={() => setCurrentView('calendar')} icon="📅" label="2026 학사일정" color="bg-orange-50 text-orange-600" />
+          <NavItem active={currentView === 'calendar'} onClick={() => setCurrentView('calendar'} icon="📅" label="2026 학사일정" color="bg-orange-50 text-orange-600" />
           <NavItem active={currentView === 'students'} onClick={() => setCurrentView('students')} icon="⭐" label="칭찬 스티커" color="bg-pink-50 text-pink-600" />
           <NavItem active={currentView === 'ai-helper'} onClick={() => setCurrentView('ai-helper')} icon="🪄" label="AI 교실 도우미" color="bg-purple-50 text-purple-600" />
           <NavItem active={currentView === 'sync'} onClick={() => setCurrentView('sync')} icon="☁️" label="실시간 공유" color="bg-sky-50 text-sky-600" />
@@ -183,10 +196,10 @@ const App: React.FC = () => {
           {cloudId && (
             <div className="mt-3 space-y-1">
                <div className="flex items-center gap-2">
-                 <span className={`flex h-2 w-2 rounded-full ${isRealtimeActive ? 'bg-green-500' : 'bg-gray-300'}`}></span>
-                 <p className="text-[10px] text-sky-500 font-bold">연결: {cloudId}</p>
+                 <span className={`flex h-2 w-2 rounded-full ${isRealtimeActive ? 'bg-green-500 shadow-[0_0_5px_green]' : 'bg-gray-300'}`}></span>
+                 <p className="text-[10px] text-sky-500 font-bold">연결됨: {cloudId}</p>
                </div>
-               <button onClick={() => fetchLatestData(cloudId)} className="text-[9px] text-gray-400 hover:text-sky-500 underline">지금 바로 새로고침</button>
+               <button onClick={() => fetchLatestData(cloudId)} className="text-[9px] text-gray-400 hover:text-sky-500 underline">수동 동기화</button>
             </div>
           )}
         </div>
@@ -232,7 +245,7 @@ const App: React.FC = () => {
                 {students.length > 0 ? (
                   <div>
                     <p className="text-xl font-bold text-gray-800">
-                      {students.length > 0 ? students.reduce((prev, curr) => (prev.stickers > curr.stickers) ? prev : curr).name : '-'} 학생
+                      {students.reduce((prev, curr) => (prev.stickers > curr.stickers) ? prev : curr).name} 학생
                     </p>
                     <p className="text-gray-500">박수를 보내주세요! 🎉</p>
                   </div>
@@ -243,11 +256,11 @@ const App: React.FC = () => {
 
               <div className="bg-white p-8 rounded-[40px] shadow-xl border-4 border-green-100 flex flex-col items-center justify-center text-center">
                 <div className="text-5xl mb-4">📡</div>
-                <h3 className="text-2xl font-gaegu font-bold text-green-600 mb-2">실시간 연결</h3>
+                <h3 className="text-2xl font-gaegu font-bold text-green-600 mb-2">실시간 상태</h3>
                 <div className="flex items-center gap-2">
                   <span className={`w-3 h-3 rounded-full ${isRealtimeActive ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`}></span>
-                  <p className={`text-sm font-bold ${cloudId ? 'text-sky-500' : 'text-gray-400'}`}>
-                    {cloudId ? (isRealtimeActive ? '실시간 감지 중' : '서버 대기 중') : '로컬 저장 전용'}
+                  <p className={`text-sm font-bold ${cloudId ? (isRealtimeActive ? 'text-green-500' : 'text-amber-500') : 'text-gray-400'}`}>
+                    {cloudId ? (isRealtimeActive ? '실시간 연결됨' : '연결 시도 중...') : '로컬 저장 모드'}
                   </p>
                 </div>
                 <button onClick={() => setCurrentView('sync')} className="mt-2 text-xs text-gray-400 underline">상세 보기</button>
