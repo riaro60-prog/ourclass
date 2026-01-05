@@ -1,9 +1,9 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Student, CalendarEvent, ViewType, ClassNote } from './types';
-import Calendar from './components/Calendar';
-import StudentList from './components/StudentList';
-import { getEncouragementMessage, getAIClassSuggestions } from './services/geminiService';
+import React, { useState, useEffect } from 'react';
+import { Student, CalendarEvent, ViewType, ClassNote } from './types.ts';
+import Calendar from './components/Calendar.tsx';
+import StudentList from './components/StudentList.tsx';
+import { getEncouragementMessage, getAIClassSuggestions } from './services/geminiService.ts';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
@@ -199,7 +199,7 @@ const App: React.FC = () => {
         )}
 
         {currentView === 'calendar' && (
-          <div className="animate-in zoom-in-95 duration-300">
+          <div className="animate-in fade-in duration-300">
             <Calendar 
               events={events} 
               onAddEvent={handleAddEvent} 
@@ -209,7 +209,7 @@ const App: React.FC = () => {
         )}
 
         {currentView === 'students' && (
-          <div className="animate-in slide-in-from-right-4 duration-300">
+          <div className="animate-in fade-in duration-300">
             <StudentList 
               students={students} 
               onAddStudent={handleAddStudent} 

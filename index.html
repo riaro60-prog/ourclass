@@ -11,6 +11,7 @@
     body {
       font-family: 'Nanum Gothic', sans-serif;
       background-color: #fff9f0;
+      margin: 0;
     }
     .font-gaegu {
       font-family: 'Gaegu', cursive;
@@ -29,19 +30,43 @@
     ::-webkit-scrollbar-thumb:hover {
       background: #ffc078;
     }
+
+    /* Animations */
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes slideUp {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    @keyframes bounceIn {
+      0% { transform: scale(0.3); opacity: 0; }
+      50% { transform: scale(1.05); opacity: 1; }
+      70% { transform: scale(0.9); }
+      100% { transform: scale(1); }
+    }
+    .animate-in { animation: fadeIn 0.5s ease-out forwards; }
+    .fade-in { animation: fadeIn 0.5s ease-out forwards; }
+    .slide-in-from-bottom-4 { animation: slideUp 0.6s ease-out forwards; }
+    .animate-bounce-in { animation: bounceIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
   </style>
-<script type="importmap">
+  <script type="importmap">
 {
   "imports": {
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
+    "react": "https://esm.sh/react@19.0.0",
+    "react-dom": "https://esm.sh/react-dom@19.0.0",
+    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
+    "@google/genai": "https://esm.sh/@google/genai@1.34.0",
     "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3"
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
   }
 }
 </script>
 </head>
 <body>
   <div id="root"></div>
+  <!-- 메인 스크립트 로드 추가 -->
+  <script type="module" src="index.tsx"></script>
 </body>
 </html>
