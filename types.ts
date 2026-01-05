@@ -19,4 +19,12 @@ export interface ClassNote {
   content: string;
 }
 
-export type ViewType = 'dashboard' | 'calendar' | 'students' | 'notes' | 'ai-helper';
+export interface ClassData {
+  students: Student[];
+  events: CalendarEvent[];
+  notes: ClassNote[];
+  lastSync: string;
+  cloudId?: string; // 클라우드 동기화를 위한 학급 고유 코드
+}
+
+export type ViewType = 'dashboard' | 'calendar' | 'students' | 'ai-helper' | 'sync';
