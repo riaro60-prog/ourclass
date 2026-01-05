@@ -83,7 +83,7 @@ const SyncManager: React.FC<SyncManagerProps> = ({ data, onImportData, onUpdateC
         <div className="bg-white p-8 rounded-[40px] shadow-xl border-4 border-gray-100 space-y-4 animate-in slide-in-from-bottom-4">
           <h3 className="text-xl font-bold text-gray-700">⚙️ Supabase 프로젝트 설정</h3>
           <p className="text-xs text-gray-400 leading-relaxed">
-            무료 DB 서비스를 사용하려면 Supabase 대시보드(Settings > API)에서 주소와 키를 복사해오세요.<br/>
+            무료 DB 서비스를 사용하려면 Supabase 대시보드(Settings &gt; API)에서 주소와 키를 복사해오세요.<br/>
             <strong>테이블 이름:</strong> <code className="bg-gray-100 px-1 rounded text-red-500">class_rooms</code>가 필요합니다.
           </p>
           <div className="space-y-3">
