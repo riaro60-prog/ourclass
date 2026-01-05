@@ -10,7 +10,6 @@ import { syncService } from './services/syncService.ts';
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
   
-  // 상태 관리
   const [students, setStudents] = useState<Student[]>(() => {
     const saved = localStorage.getItem('dreamy-students');
     return saved ? JSON.parse(saved) : [];
@@ -35,11 +34,22 @@ const App: React.FC = () => {
   const [aiResponse, setAiResponse] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+  const [isRealtimeActive, setIsRealtimeActive] = useState(false);
   
-  // 무한 루프 방지를 위한 Ref
   const isInternalUpdate = useRef(false);
 
-  // 1. 앱 시작 시 및 URL 파라미터 감지 로직
+  // 데이터 수동/자동 로드 함수
+  const fetchLatestData = async (code: string) => {
+    setIsCloudSyncing(true);
+    const data = await syncService.loadFromCloud(code);
+    if (data) {
+      if (!lastSyncTime || data.lastSync > lastSyncTime) {
+        applyData(data);
+      }
+    }
+    setIsCloudSyncing(false);
+  };
+
   useEffect(() => {
     const initApp = async () => {
       const params = new URLSearchParams(window.location.search);
@@ -47,28 +57,23 @@ const App: React.FC = () => {
       const activeCode = codeFromUrl || cloudId;
 
       if (activeCode) {
-        setIsCloudSyncing(true);
-        const data = await syncService.loadFromCloud(activeCode);
-        if (data) {
-          // 서버 데이터가 더 최신이거나 URL을 통해 강제로 온 경우 업데이트
-          applyData(data);
-          if (codeFromUrl) {
-            setCloudId(codeFromUrl);
-            window.history.replaceState({}, '', window.location.pathname);
-            alert(`'${codeFromUrl}' 학급에 연결되었습니다! ✨`);
-          }
+        if (codeFromUrl) {
+          setCloudId(codeFromUrl);
+          window.history.replaceState({}, '', window.location.pathname);
         }
-        setIsCloudSyncing(false);
+        
+        await fetchLatestData(activeCode);
 
-        // 2. 실시간 구독 시작
-        syncService.subscribeToChanges(activeCode, (newData) => {
-          // 내가 보낸 업데이트가 아닌 경우에만 적용 (timestamp 비교)
+        // 실시간 구독 시작
+        const sub = syncService.subscribeToChanges(activeCode, (newData) => {
           if (newData.lastSync > lastSyncTime) {
             isInternalUpdate.current = true;
             applyData(newData);
             setTimeout(() => { isInternalUpdate.current = false; }, 500);
           }
         });
+        
+        if (sub) setIsRealtimeActive(true);
       }
     };
 
@@ -82,7 +87,6 @@ const App: React.FC = () => {
     if (data.lastSync) setLastSyncTime(data.lastSync);
   };
 
-  // 로컬 스토리지 저장
   useEffect(() => {
     localStorage.setItem('dreamy-students', JSON.stringify(students));
     localStorage.setItem('dreamy-events', JSON.stringify(events));
@@ -91,7 +95,6 @@ const App: React.FC = () => {
     localStorage.setItem('dreamy-last-sync', lastSyncTime);
   }, [students, events, notes, cloudId, lastSyncTime]);
 
-  // 데이터 변경 시 서버 자동 저장 (Debounce)
   useEffect(() => {
     if (cloudId && syncService.isConnected() && !isInternalUpdate.current) {
       const timeoutId = setTimeout(async () => {
@@ -110,48 +113,50 @@ const App: React.FC = () => {
     getEncouragementMessage().then(setEncouragement);
   }, []);
 
+  // Add missing student management handlers
+  const handleAddStudent = (name: string, number: number) => {
+    const newStudent: Student = {
+      id: crypto.randomUUID(),
+      name,
+      number,
+      stickers: 0,
+    };
+    setStudents((prev) => [...prev, newStudent]);
+  };
+
+  const handleUpdateStickers = (id: string, amount: number) => {
+    setStudents((prev) =>
+      prev.map((s) =>
+        s.id === id ? { ...s, stickers: Math.max(0, s.stickers + amount) } : s
+      )
+    );
+  };
+
+  const handleDeleteStudent = (id: string) => {
+    setStudents((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  // Add missing AI assistant handler
+  const handleAskAi = async () => {
+    if (!aiTopic) return;
+    setIsAiLoading(true);
+    setAiResponse('');
+    const result = await getAIClassSuggestions(aiTopic);
+    setAiResponse(result || '');
+    setIsAiLoading(false);
+  };
+
   const handleImportData = (newData: ClassData) => {
     applyData(newData);
     if (newData.cloudId) {
       setCloudId(newData.cloudId);
-      syncService.subscribeToChanges(newData.cloudId, (remoteData) => {
+      const sub = syncService.subscribeToChanges(newData.cloudId, (remoteData) => {
         if (remoteData.lastSync > lastSyncTime) {
           applyData(remoteData);
         }
       });
+      setIsRealtimeActive(!!sub);
     }
-  };
-
-  const handleAddStudent = (name: string, number: number) => {
-    const newStudent: Student = { id: crypto.randomUUID(), name, number, stickers: 0 };
-    setStudents(prev => [...prev, newStudent]);
-  };
-
-  const handleUpdateStickers = (id: string, amount: number) => {
-    setStudents(prev => prev.map(s => s.id === id ? { ...s, stickers: Math.max(0, s.stickers + amount) } : s));
-  };
-
-  const handleDeleteStudent = (id: string) => {
-    if (window.confirm('정말 삭제할까요?')) {
-      setStudents(prev => prev.filter(s => s.id !== id));
-    }
-  };
-
-  const handleAddEvent = (eventData: Omit<CalendarEvent, 'id'>) => {
-    const newEvent: CalendarEvent = { id: crypto.randomUUID(), ...eventData };
-    setEvents(prev => [...prev, newEvent]);
-  };
-
-  const handleDeleteEvent = (id: string) => {
-    setEvents(prev => prev.filter(e => e.id !== id));
-  };
-
-  const handleAskAi = async () => {
-    if (!aiTopic) return;
-    setIsAiLoading(true);
-    const response = await getAIClassSuggestions(aiTopic);
-    setAiResponse(response);
-    setIsAiLoading(false);
   };
 
   return (
@@ -176,9 +181,12 @@ const App: React.FC = () => {
         <div className="mt-auto bg-yellow-50 p-4 rounded-2xl border-2 border-yellow-200">
           <p className="text-sm font-gaegu text-yellow-700 leading-relaxed italic">"{encouragement}"</p>
           {cloudId && (
-            <div className="mt-3 flex items-center gap-2">
-               <span className="flex h-2 w-2 rounded-full bg-green-500"></span>
-               <p className="text-[10px] text-sky-400 font-bold">동기화: {cloudId}</p>
+            <div className="mt-3 space-y-1">
+               <div className="flex items-center gap-2">
+                 <span className={`flex h-2 w-2 rounded-full ${isRealtimeActive ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                 <p className="text-[10px] text-sky-500 font-bold">연결: {cloudId}</p>
+               </div>
+               <button onClick={() => fetchLatestData(cloudId)} className="text-[9px] text-gray-400 hover:text-sky-500 underline">지금 바로 새로고침</button>
             </div>
           )}
         </div>
@@ -187,12 +195,23 @@ const App: React.FC = () => {
       <main className="flex-1 p-4 md:p-10 max-w-7xl mx-auto w-full">
         {currentView === 'dashboard' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-            <header className="flex justify-between items-start">
+            <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
                 <h2 className="text-4xl font-gaegu font-bold text-gray-800 mb-2">선생님, 반가워요! 👋</h2>
-                <p className="text-lg text-gray-500">
-                  {cloudId ? `현재 '${cloudId}' 그룹과 실시간 연결 중입니다.` : '로컬 모드로 사용 중입니다.'}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="text-lg text-gray-500">
+                    {cloudId ? `현재 '${cloudId}' 그룹과 실시간 연결 중입니다.` : '로컬 모드로 사용 중입니다.'}
+                  </p>
+                  {cloudId && (
+                    <button 
+                      onClick={() => fetchLatestData(cloudId)}
+                      className="p-2 bg-sky-100 text-sky-600 rounded-full hover:bg-sky-200 transition-colors"
+                      title="강제 새로고침"
+                    >
+                      <span className={isCloudSyncing ? 'animate-spin block' : ''}>🔄</span>
+                    </button>
+                  )}
+                </div>
               </div>
               {isCloudSyncing && <div className="bg-sky-100 text-sky-600 px-4 py-1 rounded-full text-xs font-bold animate-pulse">데이터 동기화 중...</div>}
             </header>
@@ -212,7 +231,9 @@ const App: React.FC = () => {
                 <h3 className="text-2xl font-gaegu font-bold text-yellow-600 mb-2">최고 칭찬 왕!</h3>
                 {students.length > 0 ? (
                   <div>
-                    <p className="text-xl font-bold text-gray-800">{students.reduce((prev, curr) => (prev.stickers > curr.stickers) ? prev : curr).name} 학생</p>
+                    <p className="text-xl font-bold text-gray-800">
+                      {students.length > 0 ? students.reduce((prev, curr) => (prev.stickers > curr.stickers) ? prev : curr).name : '-'} 학생
+                    </p>
                     <p className="text-gray-500">박수를 보내주세요! 🎉</p>
                   </div>
                 ) : (
@@ -223,9 +244,12 @@ const App: React.FC = () => {
               <div className="bg-white p-8 rounded-[40px] shadow-xl border-4 border-green-100 flex flex-col items-center justify-center text-center">
                 <div className="text-5xl mb-4">📡</div>
                 <h3 className="text-2xl font-gaegu font-bold text-green-600 mb-2">실시간 연결</h3>
-                <p className={`text-sm font-bold ${cloudId ? 'text-sky-500' : 'text-gray-400'}`}>
-                  {cloudId ? '모든 기기 실시간 동기화 On' : '로컬 저장 전용'}
-                </p>
+                <div className="flex items-center gap-2">
+                  <span className={`w-3 h-3 rounded-full ${isRealtimeActive ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`}></span>
+                  <p className={`text-sm font-bold ${cloudId ? 'text-sky-500' : 'text-gray-400'}`}>
+                    {cloudId ? (isRealtimeActive ? '실시간 감지 중' : '서버 대기 중') : '로컬 저장 전용'}
+                  </p>
+                </div>
                 <button onClick={() => setCurrentView('sync')} className="mt-2 text-xs text-gray-400 underline">상세 보기</button>
               </div>
             </div>
@@ -248,7 +272,7 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {currentView === 'calendar' && <Calendar events={events} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} />}
+        {currentView === 'calendar' && <Calendar events={events} onAddEvent={(e) => { setEvents(prev => [...prev, {id: crypto.randomUUID(), ...e}]); }} onDeleteEvent={(id) => setEvents(prev => prev.filter(e => e.id !== id))} />}
         {currentView === 'students' && <StudentList students={students} onAddStudent={handleAddStudent} onUpdateStickers={handleUpdateStickers} onDeleteStudent={handleDeleteStudent} />}
         {currentView === 'ai-helper' && (
           <div className="max-w-3xl mx-auto space-y-8 animate-in fade-in">
